@@ -27,3 +27,10 @@ UIH is a Laravel 13 backend foundation running PHP 8.3 and MySQL 8.0.40. It incl
 - Apply [backend conventions](docs/engineering/BACKEND_CONVENTIONS.md) for routing, validation, Actions, Resources, and JSON errors.
 - Use project-local skills in `.agents/skills/`; the agent workflow explains when each skill applies.
 - Set up and run the app using [Docker development](docs/engineering/DOCKER_DEVELOPMENT.md). Run the disposable test suite with the commands in [testing](docs/engineering/TESTING.md).
+
+## Architecture planning
+
+- [UIH architecture and boundaries](docs/architecture/UIH_ARCHITECTURE.md)
+- [Discovery data flow and recovery](docs/architecture/UIH_DATA_FLOW.md)
+- [Proposed API contract conventions](docs/architecture/UIH_API_CONTRACT.md)
+- [Milestone delivery plan](docs/planning/UIH_DELIVERY_PLAN.md)
