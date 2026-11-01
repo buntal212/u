@@ -18,6 +18,7 @@ services:
       APP_NAME: Udumbara Internal Hub
       APP_ENV: local
       APP_DEBUG: "true"
+      APP_LOCALE: ${APP_LOCALE:-id}
       APP_KEY: ${APP_KEY:-}
       APP_URL: http://127.0.0.1:${UIH_API_PORT:-8011}
       LOG_CHANNEL: stack
