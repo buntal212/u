@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'uih' => [
+        'server_token' => env('UIH_SERVER_TOKEN', 'uih-dev-internal-token'),
+    ],
+
 ];
