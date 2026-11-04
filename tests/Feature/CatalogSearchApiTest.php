@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Services\Catalog\CatalogSearchCoordinator;
 use Tests\TestCase;
 
 class CatalogSearchApiTest extends TestCase
@@ -23,7 +24,7 @@ class CatalogSearchApiTest extends TestCase
     {
         $token = config('services.uih.server_token');
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/catalog/search', []);
 
         $response->assertStatus(422)
@@ -34,7 +35,7 @@ class CatalogSearchApiTest extends TestCase
     {
         $token = config('services.uih.server_token');
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/catalog/search', [
                 'search_id' => 'search_1',
                 'query' => 'nasi',
@@ -49,7 +50,36 @@ class CatalogSearchApiTest extends TestCase
     {
         $token = config('services.uih.server_token');
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $capturedContent = '';
+        $realCoordinator = app(CatalogSearchCoordinator::class);
+        $this->app->bind(CatalogSearchCoordinator::class, function () use ($realCoordinator, &$capturedContent) {
+            return new class($realCoordinator, $capturedContent) extends CatalogSearchCoordinator
+            {
+                public function __construct(
+                    private CatalogSearchCoordinator $real,
+                    private string &$captured
+                ) {}
+
+                public function executeStream(string $searchId, string $query, int $limit, callable $eventEmitter): void
+                {
+                    ob_start(function (string $chunk): string {
+                        $this->captured .= $chunk;
+
+                        return '';
+                    });
+
+                    try {
+                        $this->real->executeStream($searchId, $query, $limit, $eventEmitter);
+                    } finally {
+                        if (ob_get_level() > 0) {
+                            ob_end_clean();
+                        }
+                    }
+                }
+            };
+        });
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/catalog/search', [
                 'search_id' => 'search_stream_01',
                 'query' => 'nasi',
@@ -58,14 +88,15 @@ class CatalogSearchApiTest extends TestCase
         $response->assertStatus(200);
         $this->assertStringContainsString('text/event-stream', $response->headers->get('Content-Type'));
 
-        // Capture streamed content
-        ob_start();
+        $initialBufferLevel = ob_get_level();
         $response->sendContent();
-        $content = ob_get_clean();
+        while (ob_get_level() < $initialBufferLevel) {
+            ob_start();
+        }
 
-        $this->assertStringContainsString('event: search_init', $content);
-        $this->assertStringContainsString('event: source_result', $content);
-        $this->assertStringContainsString('event: search_done', $content);
-        $this->assertStringContainsString('"search_id":"search_stream_01"', $content);
+        $this->assertStringContainsString('event: search_init', $capturedContent);
+        $this->assertStringContainsString('event: source_result', $capturedContent);
+        $this->assertStringContainsString('event: search_done', $capturedContent);
+        $this->assertStringContainsString('"search_id":"search_stream_01"', $capturedContent);
     }
 }
