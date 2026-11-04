@@ -10,6 +10,12 @@ Check the selected API port is free before starting the project:
 ss -ltn
 ```
 
+Ensure the shared Docker network for Temuka and UIH exists:
+
+```bash
+docker network create temuka-uih-network 2>/dev/null || true
+```
+
 Create the ignored environment file and set separate random development and MySQL root passwords. For example, generate each value with `openssl rand -hex 32`. Change `UIH_API_PORT` if 8011 is in use. Never reuse credentials from another project.
 
 ```bash
@@ -38,5 +44,9 @@ The health endpoint is `http://127.0.0.1:${UIH_API_PORT:-8011}/api/v1/health`. T
 ```bash
 docker compose --env-file .env -p uih-dev stop
 ```
+
+## Shared Docker network with Temuka
+
+UIH is connected to the external bridge network `temuka-uih-network` with DNS aliases `uih-dev-app` and `uih-api`. Other services on this network (such as Temuka Backend) reach UIH internally at `http://uih-dev-app:8000`. The development database remains isolated on the private `uih-dev_default` network.
 
 Do not run development migrations during M1. PHP, Composer, and Artisan commands run only inside the app container. Dependency installation is explicit and does not run on container startup.

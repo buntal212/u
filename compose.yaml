@@ -43,6 +43,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      default:
+      temuka-uih-network:
+        aliases:
+          - uih-dev-app
+          - uih-api
 
   db:
     image: mysql:8.0.40
@@ -64,3 +70,9 @@ services:
 
 volumes:
   uih-mysql-data:
+
+networks:
+  default:
+  temuka-uih-network:
+    name: temuka-uih-network
+    external: true
