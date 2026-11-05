@@ -54,6 +54,26 @@ class HttpSourceAdapter implements SourceAdapterInterface
         return $this->correlationId;
     }
 
+    public function getBaseUrl(): string
+    {
+        return $this->baseUrl;
+    }
+
+    public function getTimeoutSeconds(): float
+    {
+        return $this->timeoutSeconds;
+    }
+
+    public function getConnectTimeoutSeconds(): float
+    {
+        return $this->connectTimeoutSeconds;
+    }
+
+    public function getSearchPath(): string
+    {
+        return $this->searchPath;
+    }
+
     /**
      * Search the external source via HTTP S2S API.
      *
@@ -221,8 +241,10 @@ class HttpSourceAdapter implements SourceAdapterInterface
                 'data' => $items,
             ];
         } catch (ConnectionException $e) {
-            $isTimeout = str_contains(strtolower($e->getMessage()), 'timeout')
-                || str_contains(strtolower($e->getMessage()), 'timed out');
+            $msg = strtolower($e->getMessage());
+            $isTimeout = str_contains($msg, 'timeout')
+                || str_contains($msg, 'timed out')
+                || str_contains($msg, 'curl error 28');
 
             $this->logWarning($isTimeout ? 'Source request timed out' : 'Source connection failed', [
                 'source' => $this->sourceCode,
@@ -236,6 +258,40 @@ class HttpSourceAdapter implements SourceAdapterInterface
                     : 'Tidak dapat terhubung ke aplikasi sumber.',
             ];
         } catch (\Throwable $e) {
+            $msg = strtolower($e->getMessage());
+            $isTimeout = str_contains($msg, 'timeout')
+                || str_contains($msg, 'timed out')
+                || str_contains($msg, 'curl error 28');
+
+            $isConnection = str_contains($msg, 'connection refused')
+                || str_contains($msg, 'could not resolve host')
+                || str_contains($msg, 'curl error 7')
+                || str_contains($msg, 'curl error 6');
+
+            if ($isTimeout) {
+                $this->logWarning('Source request timed out', [
+                    'source' => $this->sourceCode,
+                ]);
+
+                return [
+                    'status' => 'failed',
+                    'error_code' => 'SOURCE_TIMEOUT',
+                    'message' => 'Koneksi ke aplikasi sumber melebihi batas waktu.',
+                ];
+            }
+
+            if ($isConnection) {
+                $this->logWarning('Source connection failed', [
+                    'source' => $this->sourceCode,
+                ]);
+
+                return [
+                    'status' => 'failed',
+                    'error_code' => 'SOURCE_CONNECTION_ERROR',
+                    'message' => 'Tidak dapat terhubung ke aplikasi sumber.',
+                ];
+            }
+
             $this->logWarning('Unexpected exception during source HTTP search', [
                 'source' => $this->sourceCode,
                 'exception' => $e::class,

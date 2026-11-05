@@ -508,4 +508,72 @@ class HttpSourceAdapterTest extends TestCase
             return ! empty($cid) && is_array($cid) && ! empty($cid[0]);
         });
     }
+
+    public function test_getters_return_all_connection_and_timeout_metadata(): void
+    {
+        $this->assertSame($this->baseUrl, $this->adapter->getBaseUrl());
+        $this->assertSame(2.0, $this->adapter->getTimeoutSeconds());
+        $this->assertSame(1.0, $this->adapter->getConnectTimeoutSeconds());
+        $this->assertSame('/api/v1/s2s/catalog/search', $this->adapter->getSearchPath());
+    }
+
+    public function test_handles_connect_timeout_specifically(): void
+    {
+        Http::fake([
+            $this->baseUrl.'/*' => function () {
+                throw new ConnectionException('cURL error 28: Connection timed out after 1000 milliseconds for '.$this->baseUrl);
+            },
+        ]);
+
+        $result = $this->adapter->search('kopi', 10);
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame('SOURCE_TIMEOUT', $result['error_code']);
+        $this->assertSame('Koneksi ke aplikasi sumber melebihi batas waktu.', $result['message']);
+    }
+
+    public function test_handles_dns_resolution_failure(): void
+    {
+        Http::fake([
+            $this->baseUrl.'/*' => function () {
+                throw new ConnectionException('cURL error 6: Could not resolve host: non-existent.internal');
+            },
+        ]);
+
+        $result = $this->adapter->search('kopi', 10);
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame('SOURCE_CONNECTION_ERROR', $result['error_code']);
+        $this->assertSame('Tidak dapat terhubung ke aplikasi sumber.', $result['message']);
+    }
+
+    public function test_handles_timeout_thrown_as_general_throwable(): void
+    {
+        Http::fake([
+            $this->baseUrl.'/*' => function () {
+                throw new \RuntimeException('Operation timed out after 2000 milliseconds with 0 bytes received');
+            },
+        ]);
+
+        $result = $this->adapter->search('kopi', 10);
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame('SOURCE_TIMEOUT', $result['error_code']);
+        $this->assertSame('Koneksi ke aplikasi sumber melebihi batas waktu.', $result['message']);
+    }
+
+    public function test_handles_connection_refused_thrown_as_general_throwable(): void
+    {
+        Http::fake([
+            $this->baseUrl.'/*' => function () {
+                throw new \RuntimeException('Failed to connect to host: Connection refused');
+            },
+        ]);
+
+        $result = $this->adapter->search('kopi', 10);
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame('SOURCE_CONNECTION_ERROR', $result['error_code']);
+        $this->assertSame('Tidak dapat terhubung ke aplikasi sumber.', $result['message']);
+    }
 }

@@ -103,7 +103,11 @@ class CatalogSearchCoordinator
                 $result = $adapter->search($query, $limit);
                 $sourceDuration = microtime(true) - $sourceStartTime;
 
-                if ($sourceDuration > $this->perSourceTimeoutSeconds) {
+                $adapterTimeout = method_exists($adapter, 'getTimeoutSeconds')
+                    ? (float) $adapter->getTimeoutSeconds()
+                    : $this->perSourceTimeoutSeconds;
+
+                if ($sourceDuration > $adapterTimeout) {
                     $summary[$code] = 'failed';
                     $eventEmitter('source_failed', [
                         'search_id' => $searchId,
