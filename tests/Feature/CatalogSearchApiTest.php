@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Services\Catalog\CatalogSearchCoordinator;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class CatalogSearchApiTest extends TestCase
@@ -114,6 +115,7 @@ class CatalogSearchApiTest extends TestCase
 
         $response->assertStatus(200);
         $this->assertStringContainsString('text/event-stream', $response->headers->get('Content-Type'));
+        $this->assertTrue(Str::isUuid((string) $response->headers->get('X-Correlation-ID')));
 
         $initialBufferLevel = ob_get_level();
         $response->sendContent();
@@ -132,5 +134,37 @@ class CatalogSearchApiTest extends TestCase
         $this->assertStringContainsString('"price":{"amount":', $capturedContent);
         $this->assertStringContainsString('"currency":"IDR"', $capturedContent);
         $this->assertStringContainsString('"provider":{', $capturedContent);
+    }
+
+    public function test_preserves_valid_incoming_correlation_id_in_response_header(): void
+    {
+        $token = config('services.uih.server_token');
+        $expectedCid = 'b2222222-3333-4444-5555-666666666666';
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->withHeader('X-Correlation-ID', $expectedCid)
+            ->postJson('/api/v1/catalog/search', [
+                'search_id' => 'search_stream_cid_01',
+                'query' => 'nasi',
+            ]);
+
+        $response->assertStatus(200);
+        $this->assertSame($expectedCid, $response->headers->get('X-Correlation-ID'));
+    }
+
+    public function test_replaces_invalid_correlation_id_with_new_uuid_in_response_header(): void
+    {
+        $token = config('services.uih.server_token');
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->withHeader('X-Correlation-ID', 'not-a-valid-uuid')
+            ->postJson('/api/v1/catalog/search', [
+                'search_id' => 'search_stream_cid_02',
+                'query' => 'nasi',
+            ]);
+
+        $response->assertStatus(200);
+        $this->assertNotSame('not-a-valid-uuid', $response->headers->get('X-Correlation-ID'));
+        $this->assertTrue(Str::isUuid((string) $response->headers->get('X-Correlation-ID')));
     }
 }

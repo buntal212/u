@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\CatalogSearchRequest;
 use App\Services\Catalog\CatalogSearchCoordinator;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CatalogSearchController extends Controller
@@ -19,6 +20,16 @@ class CatalogSearchController extends Controller
         $searchId = $validated['search_id'];
         $query = $validated['query'];
         $limit = (int) ($validated['limit'] ?? 20);
+
+        $correlationId = $request->header('X-Correlation-ID');
+        if (! is_string($correlationId) || ! Str::isUuid(trim($correlationId))) {
+            $correlationId = (string) Str::uuid();
+        } else {
+            $correlationId = trim($correlationId);
+        }
+
+        $request->attributes->set('correlation_id', $correlationId);
+        $request->headers->set('X-Correlation-ID', $correlationId);
 
         return response()->stream(function () use ($searchId, $query, $limit): void {
             // Disable output compression/buffering if active
@@ -42,6 +53,7 @@ class CatalogSearchController extends Controller
             'Cache-Control' => 'no-cache, no-transform',
             'Connection' => 'keep-alive',
             'X-Accel-Buffering' => 'no',
+            'X-Correlation-ID' => $correlationId,
         ]);
     }
 }

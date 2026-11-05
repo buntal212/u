@@ -150,15 +150,25 @@ Rencana ini dirancang secara modular dan *generic* sehingga penambahan Aplikasi 
 ---
 
 ### Fase 4: Temuka Backend Routing & Correlation Tracing
-- **Tujuan:** Mengoptimalkan Temuka Backend (`api.temuka`) sebagai proxy streaming yang andal dan memiliki kemampuan observabilitas.
-- **Ruang Lingkup:**
-  - Memverifikasi konfigurasi `UIH_SEARCH_TIMEOUT_SECONDS` pada Temuka Backend agar proporsional terhadap durasi agregasi UIH.
-  - Menerapkan penerusan header pelacakan `X-Correlation-ID` dari Temuka Backend ke UIH.
-  - Menjamin koneksi SSE ditutup secara bersih (*clean socket shutdown*) ketika stream selesai.
+- **Tujuan:** Mengoptimalkan Temuka Backend (`api.temuka`) sebagai proxy streaming yang andal dan memiliki kemampuan observabilitas terdistribusi bersama UIH Gateway (`api.uih`).
+- **Ruang Lingkup & Implementasi:**
+  - Penyelarasan validasi batas `limit` pencarian konsisten antara Temuka dan UIH (`min: 1`, `max: 50`, `default: 20`).
+  - Menerapkan penerusan header pelacakan `X-Correlation-ID` end-to-end:
+    - Temuka memvalidasi UUID dan menginjeksi header ke UIH Gateway.
+    - UIH mengekspos header `X-Correlation-ID` pada response headers SSE stream.
+    - UIH meneruskan `X-Correlation-ID` yang sama ke seluruh adapter ASU secara konsisten.
+  - Penanganan error aman pada Temuka Gateway tanpa membocorkan hostname, path, atau kredensial internal ke klien.
+- **Keputusan Arsitektur Pagination Fase 4:**
+  - UIH yang mengelola pagination dan agregasi dari ASU.
+  - SSE mengalirkan hasil secara inkremental (per-source), bukan pagination global.
+  - Frontend menampilkan hasil dalam urutan kedatangan; tidak ada global ranking lintas ASU yang menahan streaming.
+  - `has_more` atau status kelanjutan ditentukan oleh UIH, bukan Temuka.
+  - Tidak menambahkan field atau event pagination baru pada SSE stream pada fase ini.
 - **Kriteria Selesai:**
-  - Request pencarian dari Temuka memiliki `X-Correlation-ID` yang dapat dilacak pada log UIH.
+  - Request pencarian dari Temuka memiliki `X-Correlation-ID` valid yang diteruskan ke UIH dan dikembalikan di header kedua backend.
+  - Validasi limit 50 konsisten di Temuka dan UIH.
   - Stream SSE diteruskan ke frontend tanpa pemotongan buffer atau lag.
-- **Status:** `Planned`
+- **Status:** `Completed`
 
 ---
 
@@ -210,11 +220,11 @@ Rencana ini dirancang secara modular dan *generic* sehingga penambahan Aplikasi 
 
 | ID Fase | Nama Fase | Target Repositori | Status | Keterangan |
 | :---: | :--- | :--- | :---: | :--- |
-| **Fase 0** | Docker Networking Baseline & Preflight | Seluruh Repositori | `Planned` | Persiapan bridge network bersama |
-| **Fase 1** | Reusable Generic HTTP Adapter | `api.uih` | `Planned` | Fondasi class `HttpSourceAdapter` |
-| **Fase 2** | Dynamic Source Registry & Config | `api.uih` | `Planned` | Konfigurasi `config/catalog.php` & driver switcher |
-| **Fase 3** | Strict Timeout Enforcement | `api.uih` | `Planned` | Batas connect & request timeout HTTP |
-| **Fase 4** | Temuka Backend Routing & Tracing | `api.temuka` | `Planned` | Tracing `X-Correlation-ID` & stream buffer |
+| **Fase 0** | Docker Networking Baseline & Preflight | Seluruh Repositori | `Completed` | Persiapan bridge network bersama |
+| **Fase 1** | Reusable Generic HTTP Adapter | `api.uih` | `Completed` | Fondasi class `HttpSourceAdapter` |
+| **Fase 2** | Dynamic Source Registry & Config | `api.uih` | `Completed` | Konfigurasi `config/catalog.php` & driver switcher |
+| **Fase 3** | Strict Timeout Enforcement | `api.uih` | `Completed` | Batas connect & request timeout HTTP |
+| **Fase 4** | Temuka Backend Routing & Tracing | `api.temuka` & `api.uih` | `Completed` | Tracing `X-Correlation-ID` & penyelarasan limit |
 | **Fase 5** | Temuka Frontend Robustness | `web.temuka` | `Planned` | Penanganan dinamis identitas sumber |
 | **Fase 6** | Integrasi Real Adapter Larissama | `api.uih` $\leftrightarrow$ `api.larissama` | `Blocked / Menunggu Teammate` | Menunggu penyerahan endpoint dari tim Larissama |
 | **Fase 7** | Verifikasi Akhir & Observabilitas | Seluruh Repositori | `Planned` | Pengujian performa, audit log, & closing |
