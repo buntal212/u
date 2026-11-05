@@ -28,31 +28,35 @@ class MockSlowSourceAdapter implements SourceAdapterInterface
 
         $items = [
             [
-                'source' => ['code' => $this->getSourceCode()],
-                'offer' => [
-                    'id' => 'lnd-001',
-                    'name' => 'Paket Cuci Setrika Kiloan (' . trim($query) . ')',
-                    'type' => 'service',
-                    'summary' => 'Cuci bersih, wangi, rapi, selesai dalam 24 jam',
+                'id' => 'lnd-001',
+                'code' => 'LND-001',
+                'name' => 'Paket Cuci Setrika Kiloan ('.trim($query).')',
+                'category' => 'Jasa Laundry',
+                'summary' => 'Cuci bersih, wangi, rapi, selesai dalam 24 jam',
+                'price' => [
+                    'amount' => 15000,
+                    'currency' => 'IDR',
                 ],
-                'provider' => [
-                    'id' => 'tenant-lnd-05',
-                    'name' => 'Laundry Bersih Berkah',
-                ],
-                'image' => 'https://images.unsplash.com/photo-1545173168-9f1947eebb7f?w=600&auto=format&fit=crop&q=80',
-                'contact' => [
-                    'phone' => '+6289876543210',
-                    'whatsapp' => '+6289876543210',
-                    'email' => null,
-                ],
-                'location' => [
-                    'address' => 'Jl. Gejayan No. 45, Sleman',
-                    'latitude' => -7.7712,
-                    'longitude' => 110.3890,
-                    'type' => 'outlet',
+                'image' => [
+                    'url' => 'https://images.unsplash.com/photo-1545173168-9f1947eebb7f?w=600&auto=format&fit=crop&q=80',
                 ],
                 'availability' => 'available',
-                'operational_status' => 'open',
+                'provider' => [
+                    'id' => 'tenant-lnd-05',
+                    'code' => 'LND-PRV-01',
+                    'name' => 'Laundry Bersih Berkah',
+                    'image' => null,
+                    'contact' => [
+                        'phone' => '+6289876543210',
+                        'whatsapp' => '+6289876543210',
+                    ],
+                    'location' => [
+                        'address' => 'Jl. Gejayan No. 45, Sleman',
+                        'latitude' => -7.7712,
+                        'longitude' => 110.3890,
+                    ],
+                ],
+                'source' => ['code' => $this->getSourceCode()],
             ],
         ];
 

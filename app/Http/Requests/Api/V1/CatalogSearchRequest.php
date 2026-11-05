@@ -22,7 +22,7 @@ class CatalogSearchRequest extends FormRequest
         return [
             'search_id' => ['bail', 'required', 'string', 'max:64', 'not_regex:/^[\p{Z}\s]*$/u'],
             'query' => ['bail', 'required', 'string', 'max:200', 'not_regex:/^[\p{Z}\s]*$/u'],
-            'limit' => ['bail', 'nullable', 'integer', 'min:1', 'max:100'],
+            'limit' => ['bail', 'nullable', 'integer', 'min:1', 'max:50'],
         ];
     }
 

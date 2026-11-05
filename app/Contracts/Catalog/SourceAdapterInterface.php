@@ -9,7 +9,7 @@ interface SourceAdapterInterface
     public function getSourceName(): string;
 
     /**
-     * Search the source.
+     * Search the source and return catalog items adhering to Canonical Catalog Contract v1.
      *
      * @return array{
      *     status: 'completed'|'failed',

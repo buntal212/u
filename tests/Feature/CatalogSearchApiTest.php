@@ -31,6 +31,33 @@ class CatalogSearchApiTest extends TestCase
             ->assertJsonValidationErrors(['search_id', 'query']);
     }
 
+    public function test_validates_limit_boundaries(): void
+    {
+        $token = config('services.uih.server_token');
+
+        // Limit > 50 rejected
+        $responseOver = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/catalog/search', [
+                'search_id' => 'search_1',
+                'query' => 'nasi',
+                'limit' => 51,
+            ]);
+
+        $responseOver->assertStatus(422)
+            ->assertJsonValidationErrors(['limit']);
+
+        // Limit < 1 rejected
+        $responseUnder = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/catalog/search', [
+                'search_id' => 'search_1',
+                'query' => 'nasi',
+                'limit' => 0,
+            ]);
+
+        $responseUnder->assertStatus(422)
+            ->assertJsonValidationErrors(['limit']);
+    }
+
     public function test_rejects_unknown_fields(): void
     {
         $token = config('services.uih.server_token');
@@ -98,5 +125,12 @@ class CatalogSearchApiTest extends TestCase
         $this->assertStringContainsString('event: source_result', $capturedContent);
         $this->assertStringContainsString('event: search_done', $capturedContent);
         $this->assertStringContainsString('"search_id":"search_stream_01"', $capturedContent);
+
+        // Verify canonical v1 structure elements in SSE stream
+        $this->assertStringContainsString('"source":{"code":"mock_larissama","name":"Larissama F&B"}', $capturedContent);
+        $this->assertStringContainsString('"meta":{"total":', $capturedContent);
+        $this->assertStringContainsString('"price":{"amount":', $capturedContent);
+        $this->assertStringContainsString('"currency":"IDR"', $capturedContent);
+        $this->assertStringContainsString('"provider":{', $capturedContent);
     }
 }

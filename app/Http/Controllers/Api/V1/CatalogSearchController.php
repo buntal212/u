@@ -28,7 +28,7 @@ class CatalogSearchController extends Controller
 
             $eventEmitter = function (string $eventName, array $payload): void {
                 echo "event: {$eventName}\n";
-                echo 'data: ' . json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n\n";
+                echo 'data: '.json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n\n";
 
                 if (ob_get_level() > 0) {
                     ob_flush();
