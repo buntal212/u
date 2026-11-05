@@ -20,7 +20,8 @@ class HttpSourceAdapter implements SourceAdapterInterface
         protected float $timeoutSeconds = 2.0,
         protected float $connectTimeoutSeconds = 1.0,
         protected string $searchPath = '/api/v1/s2s/catalog/search',
-        protected ?LoggerInterface $logger = null
+        protected ?LoggerInterface $logger = null,
+        protected ?string $correlationId = null
     ) {}
 
     public function getSourceCode(): string
@@ -31,6 +32,26 @@ class HttpSourceAdapter implements SourceAdapterInterface
     public function getSourceName(): string
     {
         return $this->sourceName;
+    }
+
+    public function setCorrelationId(?string $correlationId): self
+    {
+        $this->correlationId = $correlationId;
+
+        return $this;
+    }
+
+    public function withCorrelationId(?string $correlationId): self
+    {
+        $clone = clone $this;
+        $clone->correlationId = $correlationId;
+
+        return $clone;
+    }
+
+    public function getCorrelationId(): ?string
+    {
+        return $this->correlationId;
     }
 
     /**
@@ -96,8 +117,36 @@ class HttpSourceAdapter implements SourceAdapterInterface
                 ];
             }
 
-            // 3. Upstream Server Error (5xx or other non-success status codes)
-            if (! $response->successful()) {
+            // 3. Upstream Rate Limiting (429)
+            if ($response->status() === 429) {
+                $this->logWarning('Source rate limit exceeded', [
+                    'source' => $this->sourceCode,
+                    'status' => 429,
+                ]);
+
+                return [
+                    'status' => 'failed',
+                    'error_code' => 'SOURCE_UNAVAILABLE',
+                    'message' => 'Aplikasi sumber membatasi kuota permintaan.',
+                ];
+            }
+
+            // 4. Other Client Errors (4xx, e.g. 400 Bad Request, 404 Not Found)
+            if ($response->clientError()) {
+                $this->logWarning('Source rejected client request with 4xx status', [
+                    'source' => $this->sourceCode,
+                    'status' => $response->status(),
+                ]);
+
+                return [
+                    'status' => 'failed',
+                    'error_code' => 'SOURCE_INVALID_REQUEST',
+                    'message' => 'Permintaan ke aplikasi sumber tidak valid.',
+                ];
+            }
+
+            // 5. Upstream Server Error (500–599, e.g. 500, 502, 503, 504)
+            if ($response->serverError()) {
                 $this->logWarning('Source server returned error status', [
                     'source' => $this->sourceCode,
                     'status' => $response->status(),
@@ -110,7 +159,21 @@ class HttpSourceAdapter implements SourceAdapterInterface
                 ];
             }
 
-            // 4. Validate JSON payload
+            // 6. Any other non-success status code (failsafe)
+            if (! $response->successful()) {
+                $this->logWarning('Source returned unexpected non-success status', [
+                    'source' => $this->sourceCode,
+                    'status' => $response->status(),
+                ]);
+
+                return [
+                    'status' => 'failed',
+                    'error_code' => 'SOURCE_ERROR',
+                    'message' => 'Aplikasi sumber mengembalikan status tidak terduga.',
+                ];
+            }
+
+            // 7. Validate JSON payload
             $json = $response->json();
             if ($json === null || ! is_array($json)) {
                 $this->logWarning('Source response is not valid JSON', [
@@ -187,15 +250,33 @@ class HttpSourceAdapter implements SourceAdapterInterface
     }
 
     /**
-     * Resolve correlation ID safely from request context or generate a new UUID.
+     * Resolve correlation ID safely from explicit property, request context, or generate a shared UUID for the search session.
      */
     protected function resolveCorrelationId(): string
     {
+        if (! empty($this->correlationId)) {
+            return $this->correlationId;
+        }
+
         if (class_exists(Facade::class) && Facade::getFacadeApplication() !== null) {
             try {
-                $header = request()->header('X-Correlation-ID');
-                if (is_string($header) && trim($header) !== '') {
-                    return trim($header);
+                $req = request();
+                if ($req !== null) {
+                    $header = $req->header('X-Correlation-ID');
+                    if (is_string($header) && trim($header) !== '') {
+                        return trim($header);
+                    }
+
+                    $attr = $req->attributes->get('correlation_id');
+                    if (is_string($attr) && trim($attr) !== '') {
+                        return trim($attr);
+                    }
+
+                    // Generate once for this HTTP request lifecycle and persist in request attributes
+                    $generated = (string) Str::uuid();
+                    $req->attributes->set('correlation_id', $generated);
+
+                    return $generated;
                 }
             } catch (\Throwable) {
                 // Ignore and fallback to UUID

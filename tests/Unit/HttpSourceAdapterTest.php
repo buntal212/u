@@ -350,4 +350,162 @@ class HttpSourceAdapterTest extends TestCase
         $this->assertSame(1, $searchDoneEvents[0]['payload']['total_items']);
         $this->assertSame(['test_source' => 'completed'], $searchDoneEvents[0]['payload']['summary']);
     }
+
+    public function test_handles_http_400_bad_request_as_invalid_request(): void
+    {
+        Http::fake([
+            $this->baseUrl.'/*' => Http::response([
+                'message' => 'Malformed query string syntax.',
+            ], 400),
+        ]);
+
+        $result = $this->adapter->search('kopi', 10);
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame('SOURCE_INVALID_REQUEST', $result['error_code']);
+        $this->assertSame('Permintaan ke aplikasi sumber tidak valid.', $result['message']);
+    }
+
+    public function test_handles_http_404_not_found_as_invalid_request(): void
+    {
+        Http::fake([
+            $this->baseUrl.'/*' => Http::response([
+                'message' => 'Endpoint route not found.',
+            ], 404),
+        ]);
+
+        $result = $this->adapter->search('kopi', 10);
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame('SOURCE_INVALID_REQUEST', $result['error_code']);
+        $this->assertSame('Permintaan ke aplikasi sumber tidak valid.', $result['message']);
+    }
+
+    public function test_handles_http_429_rate_limiting_as_source_unavailable(): void
+    {
+        Http::fake([
+            $this->baseUrl.'/*' => Http::response([
+                'message' => 'Too many requests.',
+            ], 429),
+        ]);
+
+        $result = $this->adapter->search('kopi', 10);
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame('SOURCE_UNAVAILABLE', $result['error_code']);
+        $this->assertSame('Aplikasi sumber membatasi kuota permintaan.', $result['message']);
+    }
+
+    public function test_handles_http_5xx_upstream_server_errors_consistently(): void
+    {
+        $statusCodes = [500, 502, 503, 504];
+
+        foreach ($statusCodes as $status) {
+            Http::fake([
+                $this->baseUrl.'/*' => Http::response('Server Error '.$status, $status),
+            ]);
+
+            $result = $this->adapter->search('kopi', 10);
+
+            $this->assertSame('failed', $result['status'], "Failed asserting status failed for HTTP {$status}");
+            $this->assertSame('SOURCE_UNAVAILABLE', $result['error_code'], "Failed asserting error_code for HTTP {$status}");
+            $this->assertSame('Aplikasi sumber sedang mengalami gangguan.', $result['message'], "Failed asserting message for HTTP {$status}");
+        }
+    }
+
+    public function test_explicit_correlation_id_setters_and_getters(): void
+    {
+        $this->assertNull($this->adapter->getCorrelationId());
+
+        $this->adapter->setCorrelationId('custom-cid-1');
+        $this->assertSame('custom-cid-1', $this->adapter->getCorrelationId());
+
+        $cloned = $this->adapter->withCorrelationId('custom-cid-2');
+        $this->assertSame('custom-cid-1', $this->adapter->getCorrelationId());
+        $this->assertSame('custom-cid-2', $cloned->getCorrelationId());
+    }
+
+    public function test_propagates_incoming_x_correlation_id_header_consistently(): void
+    {
+        $incomingCid = 'test-header-cid-999';
+
+        $httpRequest = \Illuminate\Http\Request::create('/catalog/search', 'GET');
+        $httpRequest->headers->set('X-Correlation-ID', $incomingCid);
+        $this->app->instance('request', $httpRequest);
+
+        Http::fake([
+            $this->baseUrl.'/*' => Http::response(['success' => true, 'data' => []], 200),
+        ]);
+
+        $this->adapter->search('kopi', 10);
+
+        Http::assertSent(function (Request $request) use ($incomingCid) {
+            return $request->header('X-Correlation-ID') === [$incomingCid];
+        });
+    }
+
+    public function test_generates_consistent_correlation_id_across_multiple_adapters_when_header_absent(): void
+    {
+        $httpRequest = \Illuminate\Http\Request::create('/catalog/search', 'GET');
+        $this->app->instance('request', $httpRequest);
+
+        $adapterA = new HttpSourceAdapter(
+            sourceCode: 'source_a',
+            sourceName: 'Source A',
+            baseUrl: 'http://source-a.internal:8000',
+        );
+
+        $adapterB = new HttpSourceAdapter(
+            sourceCode: 'source_b',
+            sourceName: 'Source B',
+            baseUrl: 'http://source-b.internal:8000',
+        );
+
+        Http::fake([
+            'http://source-a.internal:8000/*' => Http::response(['success' => true, 'data' => []], 200),
+            'http://source-b.internal:8000/*' => Http::response(['success' => true, 'data' => []], 200),
+        ]);
+
+        $events = [];
+        $eventEmitter = function (string $event, array $payload) use (&$events) {
+            $events[] = ['event' => $event, 'payload' => $payload];
+        };
+
+        $coordinator = new CatalogSearchCoordinator([$adapterA, $adapterB]);
+        $coordinator->executeStream('search_cid_test', 'test', 10, $eventEmitter);
+
+        $sentRequests = Http::recorded();
+        $this->assertCount(2, $sentRequests);
+
+        $cidA = $sentRequests[0][0]->header('X-Correlation-ID');
+        $cidB = $sentRequests[1][0]->header('X-Correlation-ID');
+
+        $this->assertNotEmpty($cidA);
+        $this->assertNotEmpty($cidB);
+        $this->assertSame($cidA, $cidB);
+    }
+
+    public function test_safe_correlation_id_generation_outside_http_request(): void
+    {
+        $this->app->offsetUnset('request');
+
+        $adapter = new HttpSourceAdapter(
+            sourceCode: 'isolated_source',
+            sourceName: 'Isolated Source',
+            baseUrl: $this->baseUrl,
+        );
+
+        Http::fake([
+            $this->baseUrl.'/*' => Http::response(['success' => true, 'data' => []], 200),
+        ]);
+
+        $result = $adapter->search('kopi', 10);
+        $this->assertSame('completed', $result['status']);
+
+        Http::assertSent(function (Request $request) {
+            $cid = $request->header('X-Correlation-ID');
+
+            return ! empty($cid) && is_array($cid) && ! empty($cid[0]);
+        });
+    }
 }

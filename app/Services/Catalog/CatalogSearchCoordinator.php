@@ -8,6 +8,7 @@ use App\Services\Catalog\Adapters\MockFlakySourceAdapter;
 use App\Services\Catalog\Adapters\MockSlowSourceAdapter;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 
 class CatalogSearchCoordinator
@@ -65,6 +66,7 @@ class CatalogSearchCoordinator
     ): void {
         $startTime = microtime(true);
         $targetCodes = array_keys($this->adapters);
+        $correlationId = $this->resolveCorrelationId();
 
         // 1. Emit search_init
         $eventEmitter('search_init', [
@@ -77,6 +79,10 @@ class CatalogSearchCoordinator
 
         // 2. Iterate through adapters progressively
         foreach ($this->adapters as $code => $adapter) {
+            if (method_exists($adapter, 'setCorrelationId')) {
+                $adapter->setCorrelationId($correlationId);
+            }
+
             // Check global timeout
             $elapsed = microtime(true) - $startTime;
             if ($elapsed >= $this->globalTimeoutSeconds) {
@@ -341,5 +347,37 @@ class CatalogSearchCoordinator
         if (class_exists(Log::class) && Facade::getFacadeApplication() !== null) {
             Log::warning($message, $context);
         }
+    }
+
+    /**
+     * Resolve or generate a correlation ID for this search session.
+     */
+    protected function resolveCorrelationId(): string
+    {
+        if (class_exists(Facade::class) && Facade::getFacadeApplication() !== null) {
+            try {
+                $req = request();
+                if ($req !== null) {
+                    $header = $req->header('X-Correlation-ID');
+                    if (is_string($header) && trim($header) !== '') {
+                        return trim($header);
+                    }
+
+                    $attr = $req->attributes->get('correlation_id');
+                    if (is_string($attr) && trim($attr) !== '') {
+                        return trim($attr);
+                    }
+
+                    $generated = (string) Str::uuid();
+                    $req->attributes->set('correlation_id', $generated);
+
+                    return $generated;
+                }
+            } catch (\Throwable) {
+                // Ignore and fall back to fresh UUID
+            }
+        }
+
+        return (string) Str::uuid();
     }
 }
